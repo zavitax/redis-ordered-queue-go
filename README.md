@@ -5,7 +5,7 @@ Priority queue with message-group based partitioning and equal attention guarant
 
 Redis-based ordered queue with support for message priority.
 
-## Quality Metrics
+## Quality metrics
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=zavitax_redis-ordered-queue-go&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=zavitax_redis-ordered-queue-go)
 

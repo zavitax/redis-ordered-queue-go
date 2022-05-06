@@ -29,9 +29,11 @@ func TestFlow (t *testing.T) {
 			//fmt.Printf("handleMessage: data %v, meta %v\n", data, meta)
 			numMsgs := atomic.AddInt64(&msgCount, 1)
 
-			if (numMsgs % 100 == 0) {
+			if (numMsgs % 1000 == 0) {
 				fmt.Printf("handleMessage: %v messages processed\n", numMsgs)
 			}
+
+			time.Sleep(time.Millisecond * 1500)
 
 			return nil
 		},
@@ -53,8 +55,16 @@ func TestFlow (t *testing.T) {
 
 		for {
 			met, _ := client.GetMetrics(context.TODO(), opt)
-			fmt.Printf("Metrics: %v\n", met)
-			time.Sleep(time.Second * 5)
+			fmt.Printf("Metrics: g: %v, msgs: %v, conc: %v, topbklg: %v, min: %v, avg: %v, max: %v, %v\n",
+				met.TrackedMessageGroups,
+				met.VisibleMessages,
+				met.WorkingConsumers,
+				met.TopMessageGroupsMessageBacklogLength,
+				met.MinLatency,
+				met.AvgLatency,
+				met.MaxLatency,
+				met)
+			time.Sleep(time.Second * 1)
 		}
 	};
 

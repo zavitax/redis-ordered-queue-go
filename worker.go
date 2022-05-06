@@ -27,7 +27,7 @@ type redisQueueWorker struct {
 func newWorker (ctx context.Context, parent *redisQueueClient) (*redisQueueWorker, error) {
 	var c = &redisQueueWorker{
 		parent: parent,
-		redis: redis.NewClient(parent.options.redisOptions),
+		redis: redis.NewClient(parent.options.RedisOptions),
 	}
 
 	var err error
@@ -96,7 +96,7 @@ func (c *redisQueueWorker) process_message (ctx context.Context, lock *lockHandl
 }
 
 func (c *redisQueueWorker) peek_messages_batch (ctx context.Context, lock *lockHandle) ([]string, error) {
-	var data, err = c.redis.Do(ctx, "ZRANGE", lock.queueId, 0, c.parent.options.batchSize - 1).Slice();
+	var data, err = c.redis.Do(ctx, "ZRANGE", lock.queueId, 0, c.parent.options.BatchSize - 1).Slice();
 
 	if (err != nil) { return nil, err }
 	
@@ -141,7 +141,7 @@ func (c *redisQueueWorker) lock (ctx context.Context) (*lockHandle, error) {
 	data, err = c.redis.Do(ctx, "XREADGROUP",
 		"GROUP", c.parent.consumerGroupId, c.consumerId,
 		"COUNT", 1,
-		"BLOCK", c.parent.options.pollingTimeout.Milliseconds(),
+		"BLOCK", c.parent.options.PollingTimeout.Milliseconds(),
 		"STREAMS", c.parent.groupStreamKey, ">").Slice();
 
 	if (err != nil) { return nil, err }
@@ -180,7 +180,7 @@ func (c *redisQueueWorker) lock (ctx context.Context) (*lockHandle, error) {
 
 func (c *redisQueueWorker) claim_timed_out_lock (ctx context.Context) (*lockHandle, error) {
 	var data, err = c.callClaimTimedOutGroup(ctx, c.redis, 
-		[]interface{} { c.parent.consumerGroupId, c.consumerId, c.parent.options.groupVisibilityTimeout.Milliseconds() },
+		[]interface{} { c.parent.consumerGroupId, c.consumerId, c.parent.options.GroupVisibilityTimeout.Milliseconds() },
 		[]string { c.parent.groupStreamKey },
 	).Slice()
 

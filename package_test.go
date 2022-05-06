@@ -1,4 +1,4 @@
-package redisOrderedQueue
+package redisOrderedQueue_test
 
 import (
 	"github.com/go-redis/redis/v8"
@@ -7,6 +7,7 @@ import (
 	"time"
 	"fmt"
 	"sync/atomic"
+	"github.com/zavitax/redis-ordered-queue-go"
 )
 
 func TestFlow (t *testing.T) {
@@ -18,14 +19,14 @@ func TestFlow (t *testing.T) {
 
 	msgCount := int64(0)
 
-	var opt = &Options{
-		redisOptions: redisOptions,
-		batchSize: 10,
-		groupVisibilityTimeout: time.Second * 5,
-		pollingTimeout: time.Second * 1,
-		consumerCount: 5000,
-		redisKeyPrefix: "{redis-ordered-queue}",
-		handleMessage: func (ctx context.Context, data *interface{}, meta *MessageMetadata) (error) {
+	var opt = &redisOrderedQueue.Options{
+		RedisOptions: redisOptions,
+		BatchSize: 10,
+		GroupVisibilityTimeout: time.Second * 5,
+		PollingTimeout: time.Second * 1,
+		ConsumerCount: 5000,
+		RedisKeyPrefix: "{redis-ordered-queue}",
+		HandleMessage: func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error) {
 			//fmt.Printf("handleMessage: data %v, meta %v\n", data, meta)
 			numMsgs := atomic.AddInt64(&msgCount, 1)
 
@@ -37,19 +38,19 @@ func TestFlow (t *testing.T) {
 
 			return nil
 		},
-		handleInvalidMessage: func (ctx context.Context, data *string) (error) {
+		HandleInvalidMessage: func (ctx context.Context, data *string) (error) {
 			fmt.Printf("handleInvalidMessage: data %v\n", *data)
 
 			return nil
 		},
 	}
 
-	var client, err = NewClient(context.TODO(), opt);
+	var client, err = redisOrderedQueue.NewClient(context.TODO(), opt);
 
 	if (err != nil) { t.Errorf("NewClient: %v", err); return }
 
 	metrics_loop := func () {
-		opt := &GetMetricsOptions{
+		opt := &redisOrderedQueue.GetMetricsOptions{
 			TopMessageGroupsLimit: 10,
 		}
 

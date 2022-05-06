@@ -8,14 +8,14 @@ import (
 )
 
 type Options struct {
-	redisOptions*	redis.Options
-	batchSize int
-	groupVisibilityTimeout time.Duration
-	pollingTimeout time.Duration
-	consumerCount int
-	redisKeyPrefix string
-	handleMessage func (ctx context.Context, data *interface{}, meta *MessageMetadata) (error)
-	handleInvalidMessage func (ctx context.Context, data *string) (error)
+	RedisOptions*	redis.Options
+	BatchSize int
+	GroupVisibilityTimeout time.Duration
+	PollingTimeout time.Duration
+	ConsumerCount int
+	RedisKeyPrefix string
+	HandleMessage func (ctx context.Context, data *interface{}, meta *MessageMetadata) (error)
+	HandleInvalidMessage func (ctx context.Context, data *string) (error)
 }
 
 var validationError = fmt.Errorf("All Options values must be correctly specified")
@@ -25,31 +25,31 @@ func (o* Options) Validate() (error) {
 		return validationError
 	}
 
-	if (o.redisOptions == nil) {
+	if (o.RedisOptions == nil) {
 		return validationError
 	}
 
-	if (o.batchSize < 1) {
+	if (o.BatchSize < 1) {
 		return validationError
 	}
 
-	if (o.groupVisibilityTimeout < time.Second) {
+	if (o.GroupVisibilityTimeout < time.Second) {
 		return validationError
 	}
 
-	if (o.pollingTimeout < time.Second) {
+	if (o.PollingTimeout < time.Second) {
 		return validationError
 	}
 
-	if (o.consumerCount < 1) {
+	if (o.ConsumerCount < 1) {
 		return validationError
 	}
 
-	if (len(o.redisKeyPrefix) < 1) {
+	if (len(o.RedisKeyPrefix) < 1) {
 		return validationError
 	}
 
-	if (o.handleMessage == nil) {
+	if (o.HandleMessage == nil) {
 		return validationError
 	}
 

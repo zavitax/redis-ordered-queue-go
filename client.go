@@ -20,12 +20,12 @@ type redisQueueWireMessage struct {
 };
 
 type MessageMetadata struct {
-	context		struct {
-		timestamp	time.Time
-		producer	int64
-		sequence	int64
-		latency		time.Duration
-		lock			*lockHandle
+	MessageContext struct {
+		Timestamp	time.Time
+		Producer	int64
+		Sequence	int64
+		Latency		time.Duration
+		Lock			*lockHandle
 	}
 }
 
@@ -59,13 +59,13 @@ func NewClient (ctx context.Context, options* Options) (*redisQueueClient, error
 	var c = &redisQueueClient{}
 
 	c.options = options
-	c.redis = redis.NewClient(c.options.redisOptions)
+	c.redis = redis.NewClient(c.options.RedisOptions)
 
-  c.groupStreamKey = fmt.Sprintf("%s::%s", c.options.redisKeyPrefix, "msg-group-stream")
-  c.groupSetKey = fmt.Sprintf("%s::%s", c.options.redisKeyPrefix, "msg-group-set")
-  c.clientIndexKey = fmt.Sprintf("%s::%s", c.options.redisKeyPrefix, "consumer-index-sequence")
-  c.consumerGroupId = fmt.Sprintf("%s::%s", c.options.redisKeyPrefix, "consumer-group")
-  c.messagePriorityQueueKeyPrefix = fmt.Sprintf("%s::%s", c.options.redisKeyPrefix, "msg-group-queue")
+  c.groupStreamKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-stream")
+  c.groupSetKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-set")
+  c.clientIndexKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "consumer-index-sequence")
+  c.consumerGroupId = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "consumer-group")
+  c.messagePriorityQueueKeyPrefix = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-queue")
 
 	c.lastMessageSequenceNumber = 0
 
@@ -100,8 +100,8 @@ func (c* redisQueueClient) createPriorityMessageQueueKey (groupId string) (strin
 func (c *redisQueueClient) process_invalid_message (ctx context.Context, msgData *string) (error) {
 	c.statTotalInvalidMessagesCount++
 
-	if (c.options.handleInvalidMessage != nil) {
-		return c.options.handleInvalidMessage(ctx, msgData)
+	if (c.options.HandleInvalidMessage != nil) {
+		return c.options.HandleInvalidMessage(ctx, msgData)
 	}
 
 	return nil
@@ -117,15 +117,15 @@ func (c *redisQueueClient) process_message (ctx context.Context, lock *lockHandl
 
 	var meta MessageMetadata
 
-	meta.context.timestamp = time.UnixMilli(packet.Timestamp).UTC()
-	meta.context.producer = packet.Producer
-	meta.context.sequence = packet.Sequence
-	meta.context.latency = time.Now().UTC().Sub(meta.context.timestamp)
-	meta.context.lock = lock
+	meta.MessageContext.Timestamp = time.UnixMilli(packet.Timestamp).UTC()
+	meta.MessageContext.Producer = packet.Producer
+	meta.MessageContext.Sequence = packet.Sequence
+	meta.MessageContext.Latency = time.Now().UTC().Sub(meta.MessageContext.Timestamp)
+	meta.MessageContext.Lock = lock
 
-	c.statLastMessageLatencies.Write(meta.context.latency)
+	c.statLastMessageLatencies.Write(meta.MessageContext.Latency)
 
-	return c.options.handleMessage(ctx, packet.Data, &meta)
+	return c.options.HandleMessage(ctx, packet.Data, &meta)
 }
 
 func (c *redisQueueClient) Send (ctx context.Context, data interface{}, priority int, groupId string) (error) {
@@ -155,7 +155,7 @@ func (c *redisQueueClient) StartConsumers (ctx context.Context) (error) {
 
 	c.statLastMessageLatencies = ringbuffer.NewRingBuffer(100)
 
-	for i := 0; i < c.options.consumerCount; i++ {	
+	for i := 0; i < c.options.ConsumerCount; i++ {	
 		worker, err := newWorker(ctx, c)
 
 		if (err != nil) {

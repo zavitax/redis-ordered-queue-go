@@ -66,7 +66,7 @@ func (c *redisQueueWorker) poll (ctx context.Context) (error) {
 	if (err != nil) { return err }
 	if (lock == nil) { return nil; }
 
-	err = c.process_messages_batch(ctx, lock)
+	err = c.processMessagesBatch(ctx, lock)
 	if (err != nil) { return err }
 
 	err = c.unlock(ctx, lock)
@@ -75,7 +75,7 @@ func (c *redisQueueWorker) poll (ctx context.Context) (error) {
 	return nil
 }
 
-func (c *redisQueueWorker) process_messages_batch (ctx context.Context, lock *lockHandle) (error) {
+func (c *redisQueueWorker) processMessagesBatch (ctx context.Context, lock *lockHandle) (error) {
 	var messages, err = c.peekMessagesBatch(ctx, lock)
 
 	if (err != nil) { return err; }

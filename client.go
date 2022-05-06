@@ -190,23 +190,7 @@ func (c *redisQueueClient) StopConsumers (ctx context.Context) (error) {
 	return nil
 }
 
-func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsOptions) (*Metrics, error) {
-	data, err := c.callGetMetrics(ctx, c.redis, 
-		[]interface{} { c.consumerGroupId, options.TopMessageGroupsLimit },
-		[]string { c.groupStreamKey, c.groupSetKey },
-	).Slice()
-
-	if (err != nil) { return nil, err }
-
-	result := &Metrics{
-		BufferedMessageGroups: data[0].(int64),
-		TrackedMessageGroups: data[1].(int64),
-		WorkingConsumers: data[2].(int64),
-		VisibleMessages: data[3].(int64),
-		InvalidMessages: c.statTotalInvalidMessagesCount,
-		TopMessageGroupsMessageBacklogLength: 0,
-	}
-
+func (c *redisQueueClient) getMetricsParseTopMessageGroups (result *Metrics, data []interface{}) {
 	if list, ok := data[4].([]interface{}); ok {
 		for i := 0; i < len(list); i += 2 {
 			if backlog, err := strconv.ParseInt(list[i + 1].(string), 10, 0); err == nil {
@@ -219,7 +203,9 @@ func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsO
 			}
 		}
 	}
+}
 
+func (c *redisQueueClient) getMetricsParseLatencies (result *Metrics) {
 	latencies := make([]interface{}, c.statLastMessageLatencies.Size)
 	copy(latencies, c.statLastMessageLatencies.Container)
 
@@ -251,6 +237,27 @@ func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsO
 	} else {
 		result.AvgLatency = time.Duration(0)
 	}
+}
+
+func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsOptions) (*Metrics, error) {
+	data, err := c.callGetMetrics(ctx, c.redis, 
+		[]interface{} { c.consumerGroupId, options.TopMessageGroupsLimit },
+		[]string { c.groupStreamKey, c.groupSetKey },
+	).Slice()
+
+	if (err != nil) { return nil, err }
+
+	result := &Metrics{
+		BufferedMessageGroups: data[0].(int64),
+		TrackedMessageGroups: data[1].(int64),
+		WorkingConsumers: data[2].(int64),
+		VisibleMessages: data[3].(int64),
+		InvalidMessages: c.statTotalInvalidMessagesCount,
+		TopMessageGroupsMessageBacklogLength: 0,
+	}
+
+	c.getMetricsParseTopMessageGroups(result, data)
+	c.getMetricsParseLatencies(result)
 
 	return result, nil
 }

@@ -76,26 +76,26 @@ func (c *redisQueueWorker) poll (ctx context.Context) (error) {
 }
 
 func (c *redisQueueWorker) process_messages_batch (ctx context.Context, lock *lockHandle) (error) {
-	var messages, err = c.peek_messages_batch(ctx, lock)
+	var messages, err = c.peekMessagesBatch(ctx, lock)
 
 	if (err != nil) { return err; }
 
 	for _, msgData := range(messages) {
-		err = c.process_message(ctx, lock, msgData);
+		err = c.processMessage(ctx, lock, msgData);
 
 		if (err == nil) {
-			err = c.delete_message(ctx, lock, msgData);
+			err = c.deleteMessage(ctx, lock, msgData);
 		}
 	}
 
 	return nil
 }
 
-func (c *redisQueueWorker) process_message (ctx context.Context, lock *lockHandle, msgData string) (error) {
-	return c.parent.process_message(ctx, lock, msgData);
+func (c *redisQueueWorker) processMessage (ctx context.Context, lock *lockHandle, msgData string) (error) {
+	return c.parent.processMessage(ctx, lock, msgData);
 }
 
-func (c *redisQueueWorker) peek_messages_batch (ctx context.Context, lock *lockHandle) ([]string, error) {
+func (c *redisQueueWorker) peekMessagesBatch (ctx context.Context, lock *lockHandle) ([]string, error) {
 	var data, err = c.redis.Do(ctx, "ZRANGE", lock.queueId, 0, c.parent.options.BatchSize - 1).Slice();
 
 	if (err != nil) { return nil, err }
@@ -109,7 +109,7 @@ func (c *redisQueueWorker) peek_messages_batch (ctx context.Context, lock *lockH
 	return result, nil
 }
 
-func (c *redisQueueWorker) delete_message (ctx context.Context, lock *lockHandle, msgData string) (error) {
+func (c *redisQueueWorker) deleteMessage (ctx context.Context, lock *lockHandle, msgData string) (error) {
 	var _, err = c.callDeleteMessage(ctx, c.redis,
 		[]interface{} { lock.groupId, msgData },
 		[]string { c.parent.groupSetKey, lock.queueId },
@@ -132,7 +132,7 @@ func (c *redisQueueWorker) unlock (ctx context.Context, lock *lockHandle) (error
 }
 
 func (c *redisQueueWorker) lock (ctx context.Context) (*lockHandle, error) {
-	var claimed, err = c.claim_timed_out_lock(ctx)
+	var claimed, err = c.claimTimedOutLock(ctx)
 
 	if (err != nil) { return nil, err }
 	if (claimed != nil) { return claimed, nil; }
@@ -146,39 +146,36 @@ func (c *redisQueueWorker) lock (ctx context.Context) (*lockHandle, error) {
 
 	if (err != nil) { return nil, err }
 
-	if (len(data) > 0) {
-		var streams = data[0].([]interface{})
-		if (streams != nil && len(streams) >= 2) {
-			var messages = streams[1].([]interface{});
+	if (len(data) == 0) { return nil, nil }
 
-			if (messages != nil && len(messages) > 0) {
-				var msg = messages[0].([]interface{});
+	var streams = data[0].([]interface{})
+	if (streams == nil || len(streams) < 2) { return nil, nil }
 
-				if (len(msg) >= 2) {
-					var msgId = msg[0].(string);
-					var content = msg[1].([]interface{});
+	var messages = streams[1].([]interface{});
 
-					if (content != nil && len(content) >= 2) {
-						var groupId = content[1].(string);
+	if (messages == nil || len(messages) == 0) { return nil, nil }
+	var msg = messages[0].([]interface{});
 
-						var result = &lockHandle{
-							messageId: msgId,
-							groupId: groupId,
-							queueId: c.parent.createPriorityMessageQueueKey(groupId),
-							consumerId: c.consumerId,
-						}
+	if (len(msg) < 2) { return nil, nil }
 
-						return result, nil
-					}
-				}
-			}
-		}
+	var msgId = msg[0].(string);
+	var content = msg[1].([]interface{});
+
+	if (content == nil || len(content) < 2) { return nil, nil }
+
+	var groupId = content[1].(string);
+
+	var result = &lockHandle{
+		messageId: msgId,
+		groupId: groupId,
+		queueId: c.parent.createPriorityMessageQueueKey(groupId),
+		consumerId: c.consumerId,
 	}
 
-	return nil, nil
+	return result, nil
 }
 
-func (c *redisQueueWorker) claim_timed_out_lock (ctx context.Context) (*lockHandle, error) {
+func (c *redisQueueWorker) claimTimedOutLock (ctx context.Context) (*lockHandle, error) {
 	var data, err = c.callClaimTimedOutGroup(ctx, c.redis, 
 		[]interface{} { c.parent.consumerGroupId, c.consumerId, c.parent.options.GroupVisibilityTimeout.Milliseconds() },
 		[]string { c.parent.groupStreamKey },

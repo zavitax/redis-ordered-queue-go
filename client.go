@@ -61,11 +61,12 @@ func NewClient (ctx context.Context, options* Options) (*redisQueueClient, error
 	c.options = options
 	c.redis = redis.NewClient(c.options.RedisOptions)
 
-  c.groupStreamKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-stream")
-  c.groupSetKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-set")
-  c.clientIndexKey = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "consumer-index-sequence")
-  c.consumerGroupId = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "consumer-group")
-  c.messagePriorityQueueKeyPrefix = fmt.Sprintf("%s::%s", c.options.RedisKeyPrefix, "msg-group-queue")
+	redisKeyFormat := "%s::%s"
+  c.groupStreamKey = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "msg-group-stream")
+  c.groupSetKey = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "msg-group-set")
+  c.clientIndexKey = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "consumer-index-sequence")
+  c.consumerGroupId = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "consumer-group")
+  c.messagePriorityQueueKeyPrefix = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "msg-group-queue")
 
 	c.lastMessageSequenceNumber = 0
 
@@ -97,7 +98,7 @@ func (c* redisQueueClient) createPriorityMessageQueueKey (groupId string) (strin
 	return fmt.Sprintf("%s::%s", c.messagePriorityQueueKeyPrefix, groupId);
 }
 
-func (c *redisQueueClient) process_invalid_message (ctx context.Context, msgData *string) (error) {
+func (c *redisQueueClient) processInvalidMessage (ctx context.Context, msgData *string) (error) {
 	c.statTotalInvalidMessagesCount++
 
 	if (c.options.HandleInvalidMessage != nil) {
@@ -107,12 +108,12 @@ func (c *redisQueueClient) process_invalid_message (ctx context.Context, msgData
 	return nil
 }
 
-func (c *redisQueueClient) process_message (ctx context.Context, lock *lockHandle, msgData string) (error) {
+func (c *redisQueueClient) processMessage (ctx context.Context, lock *lockHandle, msgData string) (error) {
 	var packet redisQueueWireMessage
 	var err error
 
 	if err = json.Unmarshal([]byte(msgData), &packet); err != nil {
-		return c.process_invalid_message(ctx, &msgData);
+		return c.processInvalidMessage(ctx, &msgData);
 	}
 
 	var meta MessageMetadata

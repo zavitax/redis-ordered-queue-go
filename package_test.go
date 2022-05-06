@@ -49,7 +49,7 @@ func TestFlow (t *testing.T) {
 
 	if (err != nil) { t.Errorf("NewClient: %v", err); return }
 
-	metrics_loop := func () {
+	metricsLoop := func () {
 		opt := &redisOrderedQueue.GetMetricsOptions{
 			TopMessageGroupsLimit: 10,
 		}
@@ -69,16 +69,14 @@ func TestFlow (t *testing.T) {
 		}
 	};
 
-	go metrics_loop();
+	go metricsLoop();
 
-	client.StartConsumers(context.TODO())
-	time.Sleep(time.Second * 60 * 5);
-	client.StopConsumers(context.TODO())
-
-	/*
 	for i := 0; i < 1000; i++ {
 		fmt.Printf(".")
 		client.Send(context.TODO(), "test", 1, fmt.Sprintf("GO-GROUP-%v", i));
 	}
-	time.Sleep(time.Second);*/
+
+	client.StartConsumers(context.TODO())
+	time.Sleep(time.Second * 60 * 5);
+	client.StopConsumers(context.TODO())
 }

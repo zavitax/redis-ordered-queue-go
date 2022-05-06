@@ -2,12 +2,14 @@ package redisOrderedQueue
 
 import (
 	"github.com/go-redis/redis/v8"
+	"github.com/sahmad98/go-ringbuffer"
 	"fmt"
 	"context"
 	"encoding/json"
 	"time"
 	"sync/atomic"
 	"strings"
+	"strconv"
 )
 
 type redisQueueWireMessage struct {
@@ -44,6 +46,9 @@ type redisQueueClient struct {
 
 	callGetMetrics redisScriptCall
   callAddGroupAndMessageToQueue redisScriptCall
+
+	statTotalInvalidMessagesCount int64
+	statLastMessageLatencies *ringbuffer.RingBuffer
 }
 
 func NewClient (ctx context.Context, options* Options) (*redisQueueClient, error) {
@@ -93,6 +98,8 @@ func (c* redisQueueClient) createPriorityMessageQueueKey (groupId string) (strin
 }
 
 func (c *redisQueueClient) process_invalid_message (ctx context.Context, msgData *string) (error) {
+	c.statTotalInvalidMessagesCount++
+
 	if (c.options.handleInvalidMessage != nil) {
 		return c.options.handleInvalidMessage(ctx, msgData)
 	}
@@ -115,6 +122,8 @@ func (c *redisQueueClient) process_message (ctx context.Context, lock *lockHandl
 	meta.context.sequence = packet.Sequence
 	meta.context.latency = time.Now().UTC().Sub(meta.context.timestamp)
 	meta.context.lock = lock
+
+	c.statLastMessageLatencies.Write(meta.context.latency)
 
 	return c.options.handleMessage(ctx, packet.Data, &meta)
 }
@@ -143,6 +152,8 @@ func (c *redisQueueClient) Send (ctx context.Context, data interface{}, priority
 
 func (c *redisQueueClient) StartConsumers (ctx context.Context) (error) {
 	if (len(c.consumerWorkers) > 0) { return fmt.Errorf("Consumers already started"); }
+
+	c.statLastMessageLatencies = ringbuffer.NewRingBuffer(100)
 
 	for i := 0; i < c.options.consumerCount; i++ {	
 		worker, err := newWorker(ctx, c)
@@ -176,4 +187,69 @@ func (c *redisQueueClient) StopConsumers (ctx context.Context) (error) {
 	c.consumerWorkers = []*redisQueueWorker {}
 
 	return nil
+}
+
+func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsOptions) (*Metrics, error) {
+	data, err := c.callGetMetrics(ctx, c.redis, 
+		[]interface{} { c.consumerGroupId, options.TopMessageGroupsLimit },
+		[]string { c.groupStreamKey, c.groupSetKey },
+	).Slice()
+
+	if (err != nil) { return nil, err }
+
+	result := &Metrics{
+		BufferedMessageGroups: data[0].(int64),
+		TrackedMessageGroups: data[1].(int64),
+		WorkingConsumers: data[2].(int64),
+		VisibleMessages: data[3].(int64),
+		InvalidMessages: c.statTotalInvalidMessagesCount,
+		TopMessageGroupsMessageBacklogLength: 0,
+	}
+
+	if list, ok := data[4].([]interface{}); ok {
+		for i := 0; i < len(list); i += 2 {
+			if backlog, err := strconv.ParseInt(list[i + 1].(string), 10, 0); err == nil {
+				result.TopMessageGroups = append(result.TopMessageGroups, &MessageGroupMetrics{
+					Group: list[i].(string),
+					Backlog: backlog,
+				})
+
+				result.TopMessageGroupsMessageBacklogLength += backlog
+			}
+		}
+	}
+
+	latencies := make([]interface{}, c.statLastMessageLatencies.Size)
+	copy(latencies, c.statLastMessageLatencies.Container)
+
+	var sumLatencyMs int64
+	var minLatencyMs int64 = 0
+	var maxLatencyMs int64 = 0
+	var numLatencies int64 = 0
+
+	if (len(latencies) > 0 && latencies[0] != nil) {
+		minLatencyMs = latencies[0].(time.Duration).Milliseconds()
+	}
+
+	for _, latency := range(latencies) {
+		if (latency != nil) {
+			numLatencies++
+
+			ms := latency.(time.Duration).Milliseconds()
+			sumLatencyMs += ms
+			if (ms < minLatencyMs) { minLatencyMs = ms; }
+			if (ms > maxLatencyMs) { maxLatencyMs = ms; }
+		}
+	}
+
+	result.MinLatency = time.Duration(minLatencyMs) * time.Millisecond
+	result.MaxLatency = time.Duration(maxLatencyMs) * time.Millisecond
+
+	if (numLatencies > 0) {
+		result.AvgLatency = time.Duration(sumLatencyMs / numLatencies) * time.Millisecond
+	} else {
+		result.AvgLatency = time.Duration(0)
+	}
+
+	return result, nil
 }

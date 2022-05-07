@@ -108,21 +108,21 @@ var scriptUnlockGroup = `
   redis.call('XACK', groupStreamKey, consumerGroupId, messageId);
   redis.call('XDEL', groupStreamKey, messageId);
 
+  -- Check remaining pending msgs for this consumer, if no more msgs are pending, we can delete the consumer
+  local pending_msgs_same_consumer = redis.call('XPENDING', groupStreamKey, consumerGroupId, '-', '+', '1', consumerId);
+
+  if (#(pending_msgs_same_consumer) == 0) then
+    -- Delete consumer which has timed out
+    redis.call('XGROUP', 'DELCONSUMER', groupStreamKey, consumerGroupId, consumerId)
+  end
+
   -- Check remaining messages in group queue, if there are no more messages remainint we can delete group set key
   local numMsgs = tonumber(redis.call('ZCARD', priorityMessageQueueKey));
 
   if (numMsgs == 0) then
     -- No msgs, remove group set key
     redis.call('ZREM', groupSetKey, groupId);
-
-    -- Check remaining pending msgs for this consumer, if no more msgs are pending, we can delete the consumer
-    local pending_msgs_same_consumer = redis.call('XPENDING', groupStreamKey, consumerGroupId, '-', '+', '1', consumerId);
-  
-    if (#(pending_msgs_same_consumer) == 0) then
-      -- Delete consumer which has timed out
-      redis.call('XGROUP', 'DELCONSUMER', groupStreamKey, consumerGroupId, consumerId)
-    end
-  
+ 
     return { 1, numMsgs };
   else
     -- Has msgs, update group set score to reflect current number of messages

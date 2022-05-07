@@ -5,10 +5,14 @@ import (
 	"context"
 	"testing"
 	"time"
-	"fmt"
 	"sync/atomic"
 	"github.com/zavitax/redis-ordered-queue-go"
+	"fmt"
 )
+
+var testMessageContent = "test message content"
+var testGroupId = "GO-GROUP-TEST"
+var testId int32
 
 var redisOptions = &redis.Options{
 	Addr: "127.0.0.1:6379",
@@ -20,13 +24,15 @@ func createQueueOptions (
 	handleMessage func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error),
 	handleInvalidMessage func (ctx context.Context, data *string) (error),
 ) (*redisOrderedQueue.Options) {
+	sequence := atomic.AddInt32(&testId, 1)
+
 	result := &redisOrderedQueue.Options{
 		RedisOptions: redisOptions,
 		BatchSize: 10,
 		GroupVisibilityTimeout: time.Second * 5,
 		PollingTimeout: time.Second * 1,
 		ConsumerCount: 10,
-		RedisKeyPrefix: "{redis-ordered-queue}",
+		RedisKeyPrefix: fmt.Sprintf("{redis-ordered-queue}::%v", sequence),
 		HandleMessage: handleMessage,
 		HandleInvalidMessage: handleInvalidMessage,
 	}
@@ -53,7 +59,6 @@ func TestConnectDisconnect (t *testing.T) {
 }
 
 func TestSendReceive (t *testing.T) {
-	var message = "test message content"
 	var minReceivedMsgCount = int64(1)
 	var receivedMsgCount int64
 
@@ -65,8 +70,8 @@ func TestSendReceive (t *testing.T) {
 			}
 
 			strData := (*data).(string)
-			if (strData != message) {
-				t.Errorf("Expected '%v' but received '%v'", message, strData)
+			if (strData != testMessageContent) {
+				t.Errorf("Expected '%v' but received '%v'", testMessageContent, strData)
 				return nil
 			}
 
@@ -81,7 +86,8 @@ func TestSendReceive (t *testing.T) {
 
 	if (err != nil) { t.Error(err); return }
 
-	client.Send(context.TODO(), message, 1, fmt.Sprintf("GO-GROUP-%v", 1));
+	client.Send(context.TODO(), testMessageContent, 1, testGroupId);
+	return
 	client.StartConsumers(context.TODO())
 
 	for i := 0; i < 10 && receivedMsgCount < minReceivedMsgCount; i++ {
@@ -98,7 +104,6 @@ func TestSendReceive (t *testing.T) {
 }
 
 func TestGroupVisibilityTimeoutRetry (t *testing.T) {
-	var message = "test message content"
 	var tryCountLimit = int64(3)
 	var minReceivedMsgCount = int64(1)
 	var retryCount int64
@@ -106,6 +111,7 @@ func TestGroupVisibilityTimeoutRetry (t *testing.T) {
 
 	options := createQueueOptions(
 		func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error) {
+			fmt.Printf("TestGroupVisibilityTimeoutRetry: received: %v\n", data)
 			tryNum := atomic.AddInt64(&retryCount, 1)
 
 			if (tryNum >= tryCountLimit) {
@@ -115,7 +121,7 @@ func TestGroupVisibilityTimeoutRetry (t *testing.T) {
 			}
 
 			// Long sleep so GroupVisibilityTimeout will expire
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 5)
 
 			return nil
 		},
@@ -128,7 +134,7 @@ func TestGroupVisibilityTimeoutRetry (t *testing.T) {
 
 	if (err != nil) { t.Error(err); return }
 
-	client.Send(context.TODO(), message, 1, fmt.Sprintf("GO-GROUP-%v", 1));
+	client.Send(context.TODO(), testMessageContent, 1, testGroupId);
 	client.StartConsumers(context.TODO())
 
 	for i := 0; i < 10 && receivedMsgCount < minReceivedMsgCount; i++ {
@@ -145,7 +151,6 @@ func TestGroupVisibilityTimeoutRetry (t *testing.T) {
 }
 
 func TestGetMetrics (t *testing.T) {
-	var message = "test message content"
 	var minReceivedMsgCount = int64(1)
 	var receivedMsgCount int64
 
@@ -157,8 +162,8 @@ func TestGetMetrics (t *testing.T) {
 			}
 
 			strData := (*data).(string)
-			if (strData != message) {
-				t.Errorf("Expected '%v' but received '%v'", message, strData)
+			if (strData != testMessageContent) {
+				t.Errorf("Expected '%v' but received '%v'", testMessageContent, strData)
 				return nil
 			}
 
@@ -173,7 +178,7 @@ func TestGetMetrics (t *testing.T) {
 
 	if (err != nil) { t.Error(err); return }
 
-	client.Send(context.TODO(), message, 1, fmt.Sprintf("GO-GROUP-%v", 1));
+	client.Send(context.TODO(), testMessageContent, 1, testGroupId);
 
 	getMetricsOptions := &redisOrderedQueue.GetMetricsOptions{
 		TopMessageGroupsLimit: 10,

@@ -12,7 +12,6 @@ import (
 
 var testMessageContent = "test message content"
 var testGroupId = "GO-GROUP-TEST"
-var testId int32
 
 var redisOptions = &redis.Options{
 	Addr: "127.0.0.1:6379",
@@ -21,18 +20,17 @@ var redisOptions = &redis.Options{
 };
 
 func createQueueOptions (
+	testId string,
 	handleMessage func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error),
 	handleInvalidMessage func (ctx context.Context, data *string) (error),
 ) (*redisOrderedQueue.Options) {
-	sequence := atomic.AddInt32(&testId, 1)
-
 	result := &redisOrderedQueue.Options{
 		RedisOptions: redisOptions,
 		BatchSize: 10,
 		GroupVisibilityTimeout: time.Second * 5,
 		PollingTimeout: time.Second * 1,
 		ConsumerCount: 10,
-		RedisKeyPrefix: fmt.Sprintf("{redis-ordered-queue}::%v", sequence),
+		RedisKeyPrefix: fmt.Sprintf("{test-redis-ordered-queue}::%v", testId),
 		HandleMessage: handleMessage,
 		HandleInvalidMessage: handleInvalidMessage,
 	}
@@ -51,7 +49,7 @@ func createQueueClient (options *redisOrderedQueue.Options) (redisOrderedQueue.R
 }
 
 func TestConnectDisconnect (t *testing.T) {
-	client, err := createQueueClient(createQueueOptions(nil, nil))
+	client, err := createQueueClient(createQueueOptions("TestConnectDisconnect", nil, nil))
 
 	if (err != nil) { t.Error(err); return }
 
@@ -63,6 +61,7 @@ func TestSendReceive (t *testing.T) {
 	var receivedMsgCount int64
 
 	options := createQueueOptions(
+		"TestSendReceive",
 		func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error) {
 			if (data == nil) {
 				t.Error("Received nil data");
@@ -103,15 +102,15 @@ func TestSendReceive (t *testing.T) {
 	}
 }
 
-func TestGroupVisibilityTimeoutRetry (t *testing.T) {
+func TestGroupVisibilityTimeout (t *testing.T) {
 	var tryCountLimit = int64(3)
 	var minReceivedMsgCount = int64(1)
 	var retryCount int64
 	var receivedMsgCount int64
 
 	options := createQueueOptions(
+		"TestGroupVisibilityTimeout",
 		func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error) {
-			fmt.Printf("TestGroupVisibilityTimeoutRetry: received: %v\n", data)
 			tryNum := atomic.AddInt64(&retryCount, 1)
 
 			if (tryNum >= tryCountLimit) {
@@ -155,6 +154,7 @@ func TestGetMetrics (t *testing.T) {
 	var receivedMsgCount int64
 
 	options := createQueueOptions(
+		"TestGetMetrics",
 		func (ctx context.Context, data *interface{}, meta *redisOrderedQueue.MessageMetadata) (error) {
 			if (data == nil) {
 				t.Error("Received nil data");

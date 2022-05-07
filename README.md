@@ -133,6 +133,7 @@ func main () {
 
 	client.StartConsumers(context.TODO())
 	time.Sleep(time.Second * 60 * 5);
-	client.StopConsumers(context.TODO())
+  client.StopConsumers(context.TODO())
+  client.Close()
 }
 ```

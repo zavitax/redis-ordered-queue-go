@@ -49,7 +49,6 @@ func (c *redisQueueWorker) run (ctx context.Context) (error) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("worker.run: cancelled!\n")
 			// Cancelled
 			return nil
 
@@ -185,7 +184,7 @@ func (c *redisQueueWorker) claimTimedOutLock (ctx context.Context) (*lockHandle,
 	if (len(data) < 2) { return nil, nil }
 
 	var msgId = data[0].(string);
-	var groupId = data[0].(string);
+	var groupId = data[1].(string);
 
 	if (len(msgId) == 0 || len(groupId) == 0) {
 		return nil, fmt.Errorf("Invalid response data: %v", data);

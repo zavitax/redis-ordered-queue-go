@@ -8,9 +8,18 @@ import (
 	"encoding/json"
 	"time"
 	"sync/atomic"
+	"sync"
 	"strings"
 	"strconv"
 )
+
+type RedisQueueClient interface {
+	StartConsumers (ctx context.Context) (error)
+	StopConsumers (ctx context.Context) (error)
+	Close () (error)
+	GetMetrics (ctx context.Context, options *GetMetricsOptions) (*Metrics, error)
+	Send (ctx context.Context, data interface{}, priority int, groupId string) (error)
+}
 
 type redisQueueWireMessage struct {
 	Timestamp int64      		`json:"t"`
@@ -30,6 +39,8 @@ type MessageMetadata struct {
 }
 
 type redisQueueClient struct {
+	mu sync.RWMutex
+
 	options* Options
 	redis* redis.Client
 
@@ -51,7 +62,7 @@ type redisQueueClient struct {
 	statLastMessageLatencies *ringbuffer.RingBuffer
 }
 
-func NewClient (ctx context.Context, options* Options) (*redisQueueClient, error) {
+func NewClient (ctx context.Context, options* Options) (RedisQueueClient, error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
@@ -69,6 +80,8 @@ func NewClient (ctx context.Context, options* Options) (*redisQueueClient, error
   c.messagePriorityQueueKeyPrefix = fmt.Sprintf(redisKeyFormat, c.options.RedisKeyPrefix, "msg-group-queue")
 
 	c.lastMessageSequenceNumber = 0
+
+	c.statLastMessageLatencies = ringbuffer.NewRingBuffer(100)
 
 	var err error
 
@@ -99,7 +112,10 @@ func (c* redisQueueClient) createPriorityMessageQueueKey (groupId string) (strin
 }
 
 func (c *redisQueueClient) processInvalidMessage (ctx context.Context, msgData *string) (error) {
-	c.statTotalInvalidMessagesCount++
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	atomic.AddInt64(&c.statTotalInvalidMessagesCount, 1)
 
 	if (c.options.HandleInvalidMessage != nil) {
 		return c.options.HandleInvalidMessage(ctx, msgData)
@@ -109,6 +125,9 @@ func (c *redisQueueClient) processInvalidMessage (ctx context.Context, msgData *
 }
 
 func (c *redisQueueClient) processMessage (ctx context.Context, lock *lockHandle, msgData string) (error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	var packet redisQueueWireMessage
 	var err error
 
@@ -129,7 +148,16 @@ func (c *redisQueueClient) processMessage (ctx context.Context, lock *lockHandle
 	return c.options.HandleMessage(ctx, packet.Data, &meta)
 }
 
+func (c *redisQueueClient) Close () (error) {
+	c.StopConsumers(context.TODO())
+
+	return c.redis.Close()
+}
+
 func (c *redisQueueClient) Send (ctx context.Context, data interface{}, priority int, groupId string) (error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	var packet redisQueueWireMessage
 
 	packet.Timestamp = time.Now().UTC().UnixMilli()
@@ -152,15 +180,16 @@ func (c *redisQueueClient) Send (ctx context.Context, data interface{}, priority
 }
 
 func (c *redisQueueClient) StartConsumers (ctx context.Context) (error) {
-	if (len(c.consumerWorkers) > 0) { return fmt.Errorf("Consumers already started"); }
+	c.mu.Lock()
 
-	c.statLastMessageLatencies = ringbuffer.NewRingBuffer(100)
+	if (len(c.consumerWorkers) > 0) { return fmt.Errorf("Consumers already started"); }
 
 	for i := 0; i < c.options.ConsumerCount; i++ {	
 		worker, err := newWorker(ctx, c)
 
 		if (err != nil) {
 			// Stop consumers which have been started
+			c.mu.Unlock()
 			c.StopConsumers(ctx)
 
 			return err
@@ -174,10 +203,15 @@ func (c *redisQueueClient) StartConsumers (ctx context.Context) (error) {
 		c.consumerWorkers = append(c.consumerWorkers, worker)
 	}
 
+	c.mu.Unlock()
+
 	return nil
 }
 
 func (c *redisQueueClient) StopConsumers (ctx context.Context) (error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if (len(c.consumerWorkers) == 0) { return fmt.Errorf("Consumers are not running"); }
 
 	for _, cancelFunc := range(c.consumerCancellationFunctions) {
@@ -240,6 +274,9 @@ func (c *redisQueueClient) getMetricsParseLatencies (result *Metrics) {
 }
 
 func (c *redisQueueClient) GetMetrics (ctx context.Context, options *GetMetricsOptions) (*Metrics, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	data, err := c.callGetMetrics(ctx, c.redis, 
 		[]interface{} { c.consumerGroupId, options.TopMessageGroupsLimit },
 		[]string { c.groupStreamKey, c.groupSetKey },
